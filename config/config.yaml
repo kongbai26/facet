@@ -1,0 +1,445 @@
+server:
+  host: "127.0.0.1"
+  # 默认仅监听本机，保护首次网页初始化；需要局域网访问时再显式改为 0.0.0.0。
+  port: 8000
+  # 后端监听端口。
+  cors_origins: []
+  # 同源单端口部署无需 CORS；本地独立前端或跨域部署时，仅填写实际前端来源。
+  log_level: "INFO"
+  # 服务端日志级别。
+
+auth:
+  enabled: true
+  # 是否启用登录与权限校验；生产环境应保持开启。
+  session_ttl_seconds: 86400
+  # 浏览器登录会话的最长有效期，单位为秒。
+  session_sliding_expiration_enabled: true
+  # 用户持续活动时是否滚动延长会话有效期。
+  session_cookie_name: "rag_session"
+  # 浏览器会话 Cookie 名称。
+  cookie_secure: false
+  # 本地 HTTP 默认可用；通过 HTTPS 公开部署时必须改为 true。
+  cookie_samesite: "lax"
+  # Cookie 跨站携带策略；lax 是常规 Web 登录的安全默认值。
+  login_rate_limit_attempts: 10
+  # 单一来源在限流窗口内允许的失败登录次数。
+  login_rate_limit_window_seconds: 300
+  # 登录失败限流窗口，单位为秒。
+
+embedding:
+  provider: "openai"
+  # Embedding 提供方；当前使用 OpenAI 兼容协议。
+  openai:
+    api_base: ""
+    # Embedding 服务地址；请在 config/.env 中配置，勿提交个人或内部服务地址。
+    api_key: ""
+    # Embedding 服务 API Key；建议只放在 config/.env 中，不要提交真实密钥。
+    model_name: "text-embedding-3-small"
+    # 通用的 OpenAI 兼容默认值；请按部署实际模型在 config/.env 中覆盖。
+    auto_detect_model_name: false
+    # 是否从服务 /models 自动发现实际 Embedding 模型名。
+    max_tokens: 512
+    # 运行时无法读取模型上下文窗口时的安全兜底；不是实际切片大小。
+    concurrent_requests: 3
+    # 并发请求数；请按部署服务的实际并发能力调整。
+    request_timeout: 60
+    # 文档批量向量化的逻辑请求总预算；所有重试共享，不会按次数累加。
+    query_timeout_seconds: 8
+    # 聊天查询向量化的逻辑请求总预算；失败后仍可使用 BM25 或无证据降级。
+    tokenizer_timeout_seconds: 10
+    # 单次精确 tokenizer 调用上限；超时后由摄入策略决定拆分或安全失败。
+    max_attempts: 3
+    # 单次 Embedding 调用最多尝试次数；包含首次请求。
+    retry_backoff_seconds: 1
+    # Embedding 重试的初始退避时间，后续按指数退避。
+    preflight_timeout_seconds: 15
+    # 上传或重建索引前检查 Embedding 服务的最长等待时间，单位为秒；超时直接提示配置或服务异常。
+
+llm:
+  api_base: ""
+  # 对话模型服务的 OpenAI 兼容 API 根地址；请在 config/.env 中配置。
+  api_key: ""
+  # 对话模型 API Key；建议只放在 config/.env 中。
+  model_name: "qwen2.5:7b"
+  # 通用默认对话模型名称；请按部署实际模型在 config/.env 中覆盖。
+  selectable_models: []
+  # 用户明确配置的额外对话模型列表；实际默认模型会自动加入，无需在这里重复。
+  # 不自动采用服务 /models 的结果，避免把未配置模型或 Embedding、Reranker 混入下拉框。
+  auto_detect_model_name: false
+  # 是否从 /models 自动选择实际加载的对话模型。
+  temperature: 0.2
+  # 默认生成随机度；越低回答越稳定。
+  max_tokens: 2048
+  # 单次回答允许生成的最大 token 数。
+  request_timeout: 30
+  # 非流式逻辑对话请求的总超时预算，单位为秒；重试和退避共享这个预算。
+  stream_first_token_timeout_seconds: 60
+  # 流式请求从发出到收到首个服务端事件的最长等待；思考模型可在此期间准备，不把整段回答误判为超时。
+  stream_idle_timeout_seconds: 45
+  # 流式请求收到任意服务端事件后，允许的最大静默间隔；防止真正卡死的连接一直占住模型槽位。
+  stream_total_timeout_seconds: 180
+  # 单次流式模型调用的最长总时长。持续输出会被保留到此上限，而不是被 request_timeout=30 提前截断。
+  max_attempts: 3
+  # 单次 LLM 调用最多尝试次数；包含首次请求。
+  attempt_timeout_ratios: [0.5, 0.8, 1.0]
+  # 每次尝试使用 request_timeout 的比例；数量必须与 max_attempts 一致。
+  # 每次还会受总请求的剩余预算限制，不会把三次时限相加。
+  retry_backoff_seconds: 1
+  # LLM 可重试错误的初始退避时间，后续按指数退避。
+  context_window: 8192
+  # 对话模型上下文窗口，用于计算可放入检索证据和历史的预算。
+  connectivity_timeout_seconds: 10
+  # 启动或健康检查连接对话模型的超时，单位为秒。
+  thinking:
+    mode: "off"
+    # 用户默认选择：auto=交给服务端、on=开启、off=关闭；Web 设置可覆盖并持久化。
+    profiles:
+      {}
+      # 仅在已验证上游推理协议时，才为对应模型添加 profile。
+
+chunking:
+  parent_child_enabled: true
+  # 启用父子切片；当前实际索引只使用本区下列父子切片参数。
+  parent_max_tokens: 1024
+  # 回答阶段可回看的完整上下文父块上限；父块不直接送入 Embedding。
+  child_target_tokens: 512
+  # 每条送入 Embedding 的子片目标上限，按实际 tokenizer 计数；小文档不会补齐。
+  # 最终值会自动取 min(用户配置, 模型运行时硬上限)，不会使用固定比例缩放。
+  child_continuity_tokens: 40
+  # 相邻子片保留的连续上下文 token 数，且已计入 child_target_tokens。
+  require_exact_tokenizer: false
+  # 默认优先使用服务的精确 tokenizer；缺失时用保守 UTF-8 上界切片并在批次超限后自动拆分。
+  # 仅在部署已验证 /tokenize 与 Embedding 模型完全一致时，才建议设为 true。
+  fallback_token_reserve: 8
+  # 兼容模式为 BOS/EOS 等服务端隐式特殊 token 预留的安全余量；不要随意设为 0。
+
+chat:
+  history_limit: 8
+  # 单次回答最多带入多少轮历史消息。
+  history_truncate: 4000
+  # 每条历史消息最多保留多少字符。
+  title_max_length: 32
+  # 自动生成的会话标题最大字符数。
+  auto_title_enabled: true
+  # 是否自动为新会话生成标题。
+  auto_title_timeout_seconds: 5
+  # 自动生成标题的模型调用超时，单位为秒。
+  auto_title_max_input_length: 200
+  # 自动生成标题时读取首条内容的最大字符数。
+  rewrite_context_truncate: 1000
+  # 将历史用于检索问题改写时，每条历史最多保留多少字符。
+  history_rewrite_max_tokens: 256
+  # 基于历史改写检索问题时，模型最多生成多少 token。
+  answer_quality:
+    default_mode: "normal"
+    # 普通和增强使用同一套语义质量门；增强仅增加纠错、候选和校验预算。
+    normal:
+      max_corrective_retrievals: 1
+      # 证据不足时最多追加一次针对缺口的检索。
+      max_context_expansions: 1
+      # LLM 判断局部片段可能缺少前后文时，最多追加的相邻上下文扩展轮数。
+      context_expansion_radius: 1
+      # 每个锚点、每个方向单轮最多补充多少个相邻父片段。
+      evidence_judge_max_retries: 1
+      # 证据裁判超时或结构无效后的额外重试次数。
+      evidence_timeout_seconds: 12
+      evidence_max_candidates: 5
+      evidence_max_tokens: 256
+      evidence_max_candidate_chars: 1400
+      semantic_answer_verification: true
+      answer_verification_max_retries: 1
+      # 答案核验器超时或结构无效后的额外重试次数。
+      answer_verification_timeout_seconds: 20
+      answer_verification_max_tokens: 256
+      max_answer_repairs: 1
+      turn_timeout_seconds: 180
+    enhanced:
+      max_corrective_retrievals: 2
+      max_context_expansions: 2
+      context_expansion_radius: 2
+      evidence_judge_max_retries: 2
+      evidence_timeout_seconds: 20
+      evidence_max_candidates: 8
+      evidence_max_tokens: 384
+      evidence_max_candidate_chars: 1800
+      semantic_answer_verification: true
+      answer_verification_max_retries: 2
+      answer_verification_timeout_seconds: 30
+      answer_verification_max_tokens: 384
+      max_answer_repairs: 2
+      turn_timeout_seconds: 300
+  answer_validation_max_retries: 0
+  # 格式校验失败后额外调用模型重写的次数。0 表示保留可用回答并记录告警，避免格式问题拖慢或打断回答。
+  stream_validate_before_emit: false
+  # 仅影响无资料直答和旧调用；知识回答在普通/增强模式下始终先校验再输出。
+  stream_output_chunk_chars: 24
+  # 校验通过后每次向浏览器发送的字符数；只影响显示节奏，不影响模型生成。
+  stream_output_chunk_delay_ms: 20
+  # 校验后分片发送间隔，单位毫秒；确保浏览器能看到逐段输出，0 表示尽快发送。
+  max_concurrent_streams: 1
+  # 同一服务进程最多并行运行的前台检索/生成会话数。本地模型默认单 slot；已验证并行能力后再提高。
+  generation_queue_wait_timeout_seconds: 12
+  # 前台请求在模型工作队列中最多等待多久；超时会返回可重试的“服务繁忙”，不会无限挂起。
+  turn_timeout_seconds: 180
+  # Agent 文本接口等旧调用的总预算；普通/增强聊天分别使用上面的档位预算。
+
+retrieval:
+  top_k: 5
+  # 最终交给回答链路的基础检索结果数量。
+  score_threshold: 0.2
+  # 向量或混合检索的基础分数门槛。
+  relevance_threshold: 0.35
+  # 无 reranker 时判断检索证据是否足够相关的门槛。
+  candidate_multiplier: 3
+  # 向量初召回数量相对 top_k 的扩展倍率。
+  max_effective_queries: 2
+  # 一次请求实际执行的最大检索问句数，含改写或扩展问句。
+  skip_standalone_rewrite_for_short_query: true
+  # 没有历史依赖时，短问题是否跳过独立问题改写。
+  standalone_rewrite_min_length: 12
+  # 被视为短问题的最小字符阈值。
+  log_retrieval_timings: true
+  # 是否记录各检索步骤耗时。
+  decision:
+    mode: "llm_gate"
+    # 普通/增强均由 LLM 按语义决定检索、复用或直答；规则只负责权限和资源可用性边界。
+    reuse_last_sources: true
+    # 多轮对话中是否允许复用上一轮已验证的来源。
+    llm_timeout_seconds: 5
+    # 使用 LLM 做检索决策时的超时，单位为秒。
+    llm_max_tokens: 48
+    # LLM 路由器输出结构化决策的最大 token 数；它不负责生成回答。
+    fallback_mode: "retrieve"
+    # LLM 决策失败时保守检索，不用关键词规则替代语义判断。
+    log_decisions: true
+    # 是否记录检索决策原因。
+  exact_match:
+    enabled: true
+    # 是否对标识符、文件名和精确短语等强匹配信号加分。
+    identifier_bonus: 0.12
+    # 标识符精确命中的加分。
+    error_code_bonus: 0.18
+    # 错误码精确命中的加分。
+    filename_bonus: 0.18
+    # 文件名精确命中的加分。
+    doc_id_bonus: 0.12
+    # 文档 ID 精确命中的加分。
+    phrase_bonus: 0.1
+    # 普通关键短语精确命中的加分。
+    lexical_metadata_fields: ["filename", "file_stem", "extension", "doc_id", "tenant_slug", "block_kind", "section_title", "heading_path", "table_headers", "source_anchor"]
+    # 参与 BM25 和精确匹配的元数据字段。
+  hybrid:
+    enabled: true
+    # 是否启用向量检索和 BM25 关键词检索的混合召回。
+    vector_weight: 0.6
+    # weighted 融合时向量结果的权重。
+    bm25_weight: 0.4
+    # weighted 融合时 BM25 结果的权重。
+    fusion_method: "rrf"
+    # 混合结果融合算法；rrf 通常比直接分数加权更稳定。
+    rrf_k: 60
+    # RRF 融合常数，数值越大越平缓。
+    bm25_top_k: 20
+    # BM25 初召回的候选数量。
+  query_rewrite:
+    enabled: true
+    # 是否在检索前调用 LLM 扩展用户问题；用于补足同义改写、隐含结果、角色/权限等不与原文逐字一致的表达。
+    strategy: "expand"
+    # 改写策略；expand 为扩写，decompose 为拆成子问题。
+    max_rewrites: 3
+    # 最多保留多少条 LLM 改写结果，不含原问题。
+    timeout_seconds: 5
+    # 单次查询改写的模型调用超时，单位为秒。
+    expand_max_tokens: 200
+    # expand 策略的最大生成 token 数。
+    decompose_max_tokens: 300
+    # decompose 策略的最大生成 token 数。
+  definition_query_expansion:
+    enabled: true
+    # 是否为“某某是什么”补充产品定位类检索问句；不调用 LLM。
+    max_added_queries: 1
+    # 最多补充多少条定义类问句。
+    title_candidate_limit: 5
+    # 从标题或前言补充候选时的最大候选数量。
+  intent_query_expansion:
+    enabled: true
+    # 是否用配置的领域同义词扩展用户问题；不调用 LLM。
+    max_added_queries: 1
+    # 最多补充多少条意图同义问句。
+    aliases:
+      核心用户: 目标用户
+      # 将“核心用户”统一扩展为“目标用户”。
+      用户群体: 目标用户
+      # 将“用户群体”统一扩展为“目标用户”。
+      服务对象: 目标用户
+      # 将“服务对象”统一扩展为“目标用户”。
+      目标人群: 目标用户
+      # 将“目标人群”统一扩展为“目标用户”。
+  relation_query:
+    enabled: true
+    # 是否为关系或对比问题补充支持性检索问句。
+    support_query_limit: 1
+    # 最多补充多少条非主实体支持问句。
+    diversify_top_n: 3
+    # 在前多少条结果内尽量覆盖不同实体证据。
+    promote_missing_evidence: true
+    # 是否提升当前缺少证据的关系实体结果。
+  support_grader:
+    mode: "always"
+    # 仅供旧调用兼容；普通/增强聊天及检索诊断使用 chat.answer_quality 下的新语义证据控制器。
+    timeout_seconds: 3
+    # 语义判断的总超时；超时/无效结果不会推翻已有的词面快速通过结果。
+    max_candidates: 5
+    # 每次最多判断的候选数；候选已受检索 top_k 和单条字符数限制，避免无界上下文。
+    max_tokens: 96
+    # 结构化判断的最大输出 token。
+    max_candidate_chars: 1200
+    # 每条候选送入支持判断的最大字符数。
+  reranker:
+    enabled: true
+    # 是否启用 reranker；服务不可用时 auto 模式会回退到未重排链路。
+    mode: "auto"
+    # reranker 探测策略；off 禁用，auto 自动重探，on 只在启动时探测。
+    provider: "http"
+    # reranker 提供方。
+    api_base: ""
+    # reranker 服务地址；请在 config/.env 中配置。
+    expected_model: ""
+    # 可选的 reranker 模型标识；strict_model_match 开启时用于校验。
+    strict_model_match: false
+    # 是否要求服务实际模型名严格等于 expected_model。
+    startup_timeout: 10
+    # 单个兼容端点的探测超时，单位为秒。
+    probe_timeout_seconds: 10
+    # 整次探测的总时限；探测只在后台或显式诊断中运行。
+    request_timeout: 5
+    # 单次 reranker 请求超时，单位为秒。
+    candidate_pool_size: 40
+    # 送入 reranker 的最大候选片段数。
+    candidate_prefilter_threshold: null
+    # rerank 前候选分数门槛；null 表示只由 candidate_pool_size 限制。
+    score_mode: "probability"
+    # reranker 返回分数的解释方式；服务返回 raw logit 时设为 logit。
+    min_score: 0.05
+    # rerank 后低于该分数的片段不进入回答上下文。
+    circuit_breaker_failures: 1
+    # 在线精排失败一次即暂时熔断，避免后续请求重复等待；后台探测成功后自动恢复。
+    reprobe_interval_seconds: 60
+    # 熔断后重新探测 reranker 的间隔，单位为秒。
+  multi_knowledge_base:
+    strategy: "adaptive"
+    # 多知识库检索策略；adaptive 会在用户选中少量库时并行补齐候选。
+    max_selected_knowledge_bases: 6
+    # 单次会话最多允许显式选择的知识库数量。
+    max_parallel_knowledge_bases: 3
+    # parallel/adaptive 策略下允许并行检索的知识库数量。
+    branch_timeout_seconds: 20
+    # 单个知识库检索分支的超时，单位为秒。
+
+app:
+  env: development
+  # 默认面向本机首次初始化；公开部署时改为 production，并设置首次初始化令牌。
+  enable_startup_recovery: true
+  # 启动时是否扫描并修复中断的摄入、索引和存储状态。
+  startup_dependency_timeout_seconds: 15
+  # 启动阶段探测外部模型服务的总超时，单位为秒；超时后降级启动，不阻塞 Web/API。
+  auto_reindex_on_embedding_change: true
+  # 检测到 Embedding 模型或维度变化时是否自动排队重新索引。
+  auto_rebuild_index_on_profile_change: true
+  # 启动时发现切片、Embedding 或索引 profile 变化后，是否自动构建并原子切换新索引。
+  index_generation_retention: 1
+  # 自动切换成功后保留的旧索引代际数量；1 可回滚，0 会立即回收全部旧代际。
+  index_generation_retention_days: 2
+  # 非活动索引最多保留多少天；到期后自动删除，即使之后没有新的重建。
+  index_retention_cleanup_interval_seconds: 0
+  # 额外周期清理间隔，单位为秒；0 表示仅在启动和自动切换后清理，避免空转扫描。
+  vector_storage_orphan_grace_seconds: 86400
+  # 孤立向量目录的安全宽限期，单位为秒；超过后才允许物理删除，避免误删正在写入的目录。
+  ingest_job_history_retention_days: 30
+  # 已完成、失败或取消的任务记录保留天数；0 表示启动时立即清理全部历史任务。
+  metadata_backup_retention_days: 7
+  # 元数据备份保留天数。
+  metadata_backup_max_files: 5
+  # 元数据备份最多保留文件数。
+
+ingest:
+  batch_size: 16
+  # 一次 Embedding 请求包含的最大子片数量；应不超过服务可用 slot 容量。
+
+observability:
+  log_vector_query_timing: true
+  # 是否记录向量检索耗时。
+  log_bm25_timing: true
+  # 是否记录 BM25 检索耗时。
+  log_bm25_rebuild_reason: true
+  # 是否记录 BM25 重建或跳过重建的原因。
+  log_query_rewrite_skips: true
+  # 是否记录查询改写被跳过的原因。
+  log_retrieval_trace: false
+  # 是否记录完整检索轨迹；仅诊断时开启，避免普通日志包含过多内容。
+
+vectorstore:
+  backend: "chroma"
+  # 当前实现使用本地 Chroma；不支持把此字段改成其他向量后端。
+  mode: "persistent"
+  # 当前实现使用本地持久化模式；不支持 http 远程模式。
+  persist_dir: "./data/chroma"
+  # Chroma 向量数据库持久化目录。
+  collection_prefix: "rag"
+  # 本项目管理的向量集合名称前缀。
+
+storage:
+  upload_dir: "./data/uploads"
+  # 上传原文件的持久化目录。
+  metadata_db: "./data/metadata.db"
+  # SQLite 文档、任务、会话和索引元数据文件路径。
+  max_file_size_mb: 50
+  # 单个上传文件允许的最大大小，单位为 MB。
+  max_uncompressed_archive_size_mb: 250
+  # DOCX/XLSX 解压后的声明总大小上限，防止 ZIP 解压膨胀。
+  max_archive_members: 10000
+  # DOCX/XLSX 中允许的最大归档成员数量。
+  max_batch_files: 20
+  # 单次批量上传允许的最大文件数。
+  allowed_extensions: [".pdf", ".txt", ".md", ".docx", ".html", ".htm", ".csv", ".xlsx"]
+  # 允许上传并解析的文件扩展名。
+
+database:
+  backend: "sqlite"
+  # 当前实现的元数据、会话和任务队列都使用 SQLite。
+  sqlite_path: "./data/metadata.db"
+  # 与 storage.metadata_db 保持一致；启动时会统一到这个路径。
+
+rate_limit:
+  enabled: false
+  # 是否为未单独配置限额的 API key 启用默认每分钟请求限制。
+  backend: "sqlite"
+  # 限流计数写入同一个 SQLite 元数据库，跨进程仍然原子。
+  default_requests_per_minute: 120
+  # 未单独配置 requests_per_minute 的 API key 使用此上限。
+
+quota:
+  enabled: false
+  # 是否为未单独配置限额的 API key 启用默认每日配额。
+  default_daily_quota: 100000
+  # 未单独配置 daily_quota 的 API key 使用此上限。
+  default_max_collections: 50
+  # 每个 tenant 可创建的独立 Vector collection 数量上限。
+  default_max_namespaces: 20
+  # 每个 tenant 可创建的知识库命名空间数量上限。
+
+queue:
+  backend: "db"
+  # 摄入任务队列后端；db 表示使用 SQLite 持久队列。
+  autostart_worker: true
+  # 后端启动时是否同时启动本进程内的任务 worker。
+  worker_poll_interval_seconds: 2
+  # worker 空闲时轮询下一条任务的间隔，单位为秒。
+  max_attempts: 5
+  # 单个任务最大执行尝试次数。
+  lock_timeout_seconds: 300
+  # 运行中任务锁的超时，超过后可由恢复机制重新领取，单位为秒。
+  knowledge_base_delete_wait_timeout_seconds: 60
+  # 删除知识库时等待相关写任务安全退出的最长时间，单位为秒。
+  knowledge_base_delete_poll_interval_seconds: 0.5
+  # 删除知识库时检查相关写任务状态的间隔，单位为秒。
