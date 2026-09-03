@@ -1,0 +1,28 @@
+# Local configuration and runtime data
+config/.env
+.env
+.env.*
+!.env.example
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+
+# Node / frontend build caches
+web/node_modules/
+web/.vite/
+npm-debug.log*
+
+# Operating system and editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
