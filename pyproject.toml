@@ -17,7 +17,7 @@ dependencies = [
     # Chroma 0.6 still calls the legacy three-argument posthog.capture API.
     # Newer posthog releases emit telemetry errors even when telemetry is disabled.
     "posthog>=2.4.0,<4.0.0",
-    "openai>=1.10.0,<2.0.0",
+    "openai>=3.6.0,<4.0.0",
     "pypdf>=5.0.0,<7.0.0",
     "python-docx>=1.1.0",
     "openpyxl>=3.1.0",
